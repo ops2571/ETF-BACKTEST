@@ -332,22 +332,29 @@ with tab_stats:
 # ===== 배당 =====
 with tab_div:
     st.subheader("배당 이력")
-    with st.spinner("배당 데이터 가져오는 중..."):
-        div_df = fetch_dividends(result.tickers, start_date, end_date)
+    div_df = pd.DataFrame()
+    try:
+        with st.spinner("배당 데이터 가져오는 중..."):
+            div_df = fetch_dividends(result.tickers, start_date, end_date)
+    except Exception as e:
+        st.error(f"배당 데이터 조회 실패: {e}")
 
-    if div_df.empty:
+    if div_df is None or div_df.empty:
         st.info("기간 내 배당 데이터가 없습니다.")
     else:
-        annual = annual_dividends(div_df)
-        st.plotly_chart(dividend_bar_chart(annual), use_container_width=True)
+        try:
+            annual = annual_dividends(div_df)
+            st.plotly_chart(dividend_bar_chart(annual), use_container_width=True)
 
-        st.markdown("**연간 배당 합계 (주당, $)**")
-        st.dataframe(annual.style.format("{:.4f}"), use_container_width=True)
+            st.markdown("**연간 배당 합계 (주당, $)**")
+            st.dataframe(annual.style.format("{:.4f}"), use_container_width=True)
 
-        st.markdown("**개별 배당 지급 이력**")
-        display = div_df.copy()
-        display.index = display.index.strftime("%Y-%m-%d")
-        st.dataframe(display.style.format("{:.4f}"), use_container_width=True)
+            st.markdown("**개별 배당 지급 이력**")
+            display = div_df.copy()
+            display.index = display.index.strftime("%Y-%m-%d")
+            st.dataframe(display.style.format("{:.4f}"), use_container_width=True)
+        except Exception as e:
+            st.error(f"배당 차트 렌더링 실패: {e}")
 
 # ===== 몬테카를로 =====
 with tab_mc:

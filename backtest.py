@@ -348,23 +348,26 @@ def correlation_matrix(result: BacktestResult) -> pd.DataFrame:
 
 def fetch_dividends(tickers: list[str], start, end) -> pd.DataFrame:
     """각 티커별 배당 이력. 컬럼=티커, 인덱스=지급일."""
-    out = {}
+    out: dict[str, pd.Series] = {}
     for t in tickers:
         try:
             div = yf.Ticker(t).dividends
-            if div is None or div.empty:
+            if div is None or not isinstance(div, pd.Series) or div.empty:
                 continue
-            # 타임존 제거 후 기간 필터
             if div.index.tz is not None:
                 div.index = div.index.tz_localize(None)
             div = div[(div.index >= pd.Timestamp(start)) & (div.index <= pd.Timestamp(end))]
-            if not div.empty:
-                out[t] = div
+            if div.empty:
+                continue
+            out[t] = div.astype(float)
         except Exception:
             continue
     if not out:
         return pd.DataFrame()
-    return pd.DataFrame(out)
+    try:
+        return pd.concat(out, axis=1).sort_index()
+    except Exception:
+        return pd.DataFrame()
 
 
 def annual_dividends(div_df: pd.DataFrame) -> pd.DataFrame:
@@ -408,8 +411,10 @@ def monte_carlo_simulation(
 
 def monte_carlo_percentiles(paths: np.ndarray) -> pd.DataFrame:
     """시점별 5/25/50/75/95 퍼센타일."""
+    if paths is None or paths.ndim != 2 or paths.size == 0:
+        return pd.DataFrame(columns=["p5", "p25", "p50", "p75", "p95"])
     pcts = [5, 25, 50, 75, 95]
-    data = {f"p{p}": np.percentile(paths, p, axis=1) for p in pcts}
+    data = {f"p{p}": np.asarray(np.percentile(paths, p, axis=1)).ravel() for p in pcts}
     df = pd.DataFrame(data)
     df.index.name = "Day"
     return df
@@ -447,8 +452,11 @@ def volatility_drag_analysis(
     반환 컬럼: base, theoretical, actual, drag_pct
     - drag_pct = (theoretical - actual) / theoretical * 100  (누적 기준)
     """
-    px = download_prices([lev_ticker, base_ticker], start, end).dropna()
-    if px.empty or lev_ticker not in px.columns or base_ticker not in px.columns:
+    try:
+        px = download_prices([lev_ticker, base_ticker], start, end).dropna()
+    except Exception as e:
+        raise ValueError(f"{lev_ticker}/{base_ticker} 다운로드 실패: {e}")
+    if px.empty or lev_ticker not in px.columns or base_ticker not in px.columns or len(px) < 2:
         raise ValueError(f"{lev_ticker} 또는 {base_ticker} 데이터를 불러올 수 없습니다.")
 
     lev_r = px[lev_ticker].pct_change().fillna(0.0)
